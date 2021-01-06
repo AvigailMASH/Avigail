@@ -1,0 +1,536 @@
+---
+title: "Parties 2.1 & 3.2"
+author: "Ilan, Yohan, Avigail"
+date: "08/02/2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+```{r}
+library(reliaR)
+```
+
+
+```{r}
+#Il s'agit du code pour les parties 2.1 et 3.2. Veuillez kniter en html (le pdf ne fonctionne pas en raison du trop grand nombre de données).
+```
+
+*Chapitre 2. Simulation et mise en application sur données réelles*
+**2.1 Simulation de données selon le modèle**
+
+
+
+```{r}
+#Choix des paramètres
+
+a =0.4 
+b =0.6
+n = 5000
+p = 10000
+mu1 = 0
+nu1 = 1
+mu2 = 0
+nu2 = 0.01
+theta = 0.5
+
+```
+
+```{r}
+#Fonctions permettant de simuler les valeurs de eps et xi
+
+simuEps<-function(n,p){
+  x = matrix(0, n, p)
+  for(j in 1:p){
+      eps = rnorm(n,mu1,nu1)
+      x[,j]=eps}
+  return(x)
+}
+
+simuKsi<-function(n,p){
+  x = matrix(0, n, p)
+  for(j in 1:p){
+      ksi = rnorm(n,mu2,nu2)
+      x[,j]=ksi}
+  return(x)
+}
+
+```
+
+
+```{r}
+
+epsilon=simuEps(n,p)
+xi=simuKsi(n,p)
+
+```
+
+
+```{r}
+#Fonction permettant de simuler les données (Zt) selon le modèle
+
+StockSampling <- function(n,p,mu1,nu1,mu2,nu2,theta){
+  DATAM = matrix(0, n, p)
+  Z = numeric(n)
+  Y = numeric(n)
+  for (b in 1:p) {
+    Y[1] = 0.5
+    for ( i in 1:(n-1) )   {
+      Y[i+1] = theta*Y[i]+epsilon[i,b]
+      Z[i] = Y[i]+xi[i,b] # w supposé nul pour l'instant 
+    }
+    Z[n] = theta*Y[n]+xi[n,b]
+    DATAM[,b] = Z
+  }
+  return(DATAM)
+}
+
+DATAM = StockSampling(n,p,mu1,nu1,mu2,nu2,theta)
+
+```
+
+
+```{r}
+#Représentation des données simulées
+
+DATAF =  as.data.frame(DATAM)
+matplot(DATAF, type = "l")
+
+```
+
+
+
+```{r}
+#Valeurs des estimateurs de theta pour chaque jeu de donnée & tracé de l'histogramme
+
+THETA<-function(n,p){
+  N=n/2
+  THETA=numeric()
+  for (i in 1:p){
+    num=0
+    den=0
+    for (j in 3:(N-1)){
+      num=num+DATAM[j,i]*DATAM[j-2,i]
+    }
+    for (k in 3:(N-1)){
+      den=den+DATAM[k-1,i]*DATAM[k-2,i]
+    }
+    THETA[i]=num/den
+  }
+  return(THETA)
+}
+
+hist(THETA(n,p),freq=FALSE,breaks=50,
+     main="Histogramme illustrant la répartition 
+     des valeurs de thêta_estimateur", 
+     xlab="valeur de thêta_estimateur", 
+     ylab="fréquence d'apparition", 
+     col="chartreuse",xlim=c(0.2,0.8)) 
+
+curve(dnorm(x,0.5,0.035),add=TRUE)
+
+```
+
+
+
+```{r}
+#estimateur projeté sur [a,b]
+
+THETACHAP<-function(a,b,n,p){
+  res=numeric(p)
+  THETA=THETA(n,p)
+  j=1
+  for (i in THETA){
+    if (i<= b & i>=a){
+     res[j]=i
+    }
+    if (i<a){
+      res[j]=a
+    }
+    if (i>b){
+     res[j]=b
+    }
+    j=j+1
+  }
+  return(res)
+}
+
+THETACHAP=THETACHAP(a,b,n,p)
+
+```
+
+
+```{r}
+#Calcul des fonctions Mn et Bn
+
+estMn=function(p){
+  Mn=numeric(p)
+  for (j in 1:p){
+   Mn[j] = mean(epsilon[,j]^2)+mean(xi[,j]^2)*(1+THETACHAP[j]^2)
+  }
+  return(Mn)
+}
+
+estBn=function(p){
+  Bn=numeric(p)
+  for (j in 1:p){
+   Bn[j] = mean(epsilon[,j]^4)-mean(epsilon[,j]^2)^2+mean(xi[,j]^4)*(1+THETACHAP[j]^2)^2-
+  mean(xi[,j]^2)^2*(1-THETACHAP[j]^2)^2
++4*mean(epsilon[,j]^2)*mean(xi[,j]^2)*(1+THETACHAP[j]^2)
+  }
+  return(Bn)
+}
+
+M_n=estMn(p)
+B_n=estBn(p)
+
+```
+
+
+
+```{r}
+#Calcul de la somme (dans la stat)
+
+N=(n/2)
+somme<-function(a,b,n,p){
+  N=(n/2)
+  res = vector('numeric',p)
+  for (j in 1:p){
+    sum=0
+    for (i in (N+1):n){
+     sum=sum+(( DATAM[i,j] - THETACHAP[j]*DATAM[i-1,j])^2)-M_n[j]
+    }
+    res[j]=sum
+  }
+  return(res)
+}
+
+#statistique de test & résultats des tests sur données simulées
+
+S_n=somme(a,b,n,p)
+STAT0=(1/sqrt(N*B_n))*S_n
+STAT1=(1/sqrt(N*B_n))*S_n
+STAT0[STAT0<=qnorm(0.95,0,1)]=0
+
+STAT1[STAT1>qnorm(0.95,0,1)]=1
+HYP0=sum(STAT0==0)
+HYP1=sum(STAT1==1)
+cat('On accepte HO dans',(HYP0/p)*100,'% des cas') 
+cat('   On rejette H0 dans',(HYP1/p)*100,'% des cas')
+
+```
+
+
+
+*Chapitre 3. Puissance du test*
+**3.2 Implémentation numérique**
+
+
+```{r}
+#choix des paramètres
+
+a =0.7
+b =0.99
+n = 5000
+p = 10000
+mu1 = 0
+nu1 = 1
+mu2 = 0
+nu2 = 1
+theta = 0.95
+
+```
+
+
+```{r}
+
+epsilon=simuEps(n,p)
+xi=simuKsi(n,p)
+
+```
+
+
+```{r}
+#simulation des données sous H1 (i.e en ajoutant la "perturbation")
+
+StockSampling3 <- function(n,p,mu1,nu1,mu2,nu2,theta,lambda){
+  DATAM = matrix(0, n, p)
+  Z = numeric(n)
+  Y = numeric(n)
+  for (b in 1:p) {
+    Y[1] = 0.5
+    for ( i in 1:(n-1) )   {
+      Y[i+1] = theta*Y[i] + lambda*sin(Y[i]) + epsilon[i,b]
+      Z[i] = Y[i]+xi[i,b] # w supposé nul 
+    }
+    Z[n] = theta*Y[n]+xi[n,b]
+    DATAM[,b] = Z
+  }
+  return(DATAM)
+}
+
+```
+
+
+
+```{r}
+#estimateur de theta (données non splittées)
+
+Theta<-function(n,p,data){
+  DATA=data
+  THETA=numeric()
+  for (i in 1:p){
+    num=0
+    den=0
+    for (j in 3:(n)){
+      num=num+DATA[j,i]*DATA[j-2,i]
+    }
+    for (k in 3:(n)){
+      den=den+DATA[k-1,i]*DATA[k-2,i]
+    }
+    THETA[i]=num/den
+  }
+  return(THETA)
+}
+
+```
+
+
+
+```{r}
+#estimateur projeté sur [a,b]
+
+Thetachap<-function(a,b,n,p,theta){
+  res=numeric(p)
+  THETA=theta
+  j=1
+  for (i in THETA){
+    if (i<= b & i>=a){
+     res[j]=i
+    }
+    if (i<a){
+      res[j]=a
+    }
+    if (i>b){
+     res[j]=b
+    }
+    j=j+1
+  }
+  return(res)
+}
+
+```
+
+
+```{r}
+#Calcul des fonctions Mn et Bn
+
+estMn=function(p,thetachap){
+  THETACHAP=thetachap
+  Mn=numeric(p)
+  for (j in 1:p){
+   Mn[j] = mean(epsilon[,j]^2)+mean(xi[,j]^2)*(1+THETACHAP[j]^2)
+  }
+  return(Mn)
+}
+
+estBn=function(p,thetachap){
+  THETACHAP=thetachap
+  Bn=numeric(p)
+  for (j in 1:p){
+   Bn[j] = mean(epsilon[,j]^4)-mean(epsilon[,j]^2)^2+mean(xi[,j]^4)*(1+THETACHAP[j]^2)^2-
+  mean(xi[,j]^2)^2*(1-THETACHAP[j]^2)^2
++4*mean(epsilon[,j]^2)*mean(xi[,j]^2)*(1+THETACHAP[j]^2)
+  }
+  return(Bn)
+}
+```
+
+
+```{r}
+#Les valeurs de Mn et Bn sont proches quelque soit la valeur de lambda; nous les calculons donc uniquement pour lambda=1.5
+
+Data_1.5 = StockSampling3(n,p,mu1,nu1,mu2,nu2,theta,1.5)
+Theta_1.5 = Theta(n,p,Data_1.5)
+Thetachap_1.5 = Thetachap(a,b,n,p,Theta_1.5)
+
+
+Mn=estMn(p,Thetachap_1.5)
+Bn=estBn(p,Thetachap_1.5)
+
+
+```
+
+
+```{r}
+#Calcul de la somme (dans la stat)
+
+somme<-function(a,b,n,p,data,thetachap){
+  Data=data
+  Thetachap=thetachap
+  res = vector('numeric',p)
+  for (j in 1:p){
+    sum=0
+    for (i in 2:n){
+     sum=sum+(( Data[i,j] - Thetachap[j]*Data[i-1,j])^2)-Mn[j]
+    }
+    res[j]=sum
+  }
+  return(res)
+}
+
+```
+
+
+
+```{r}
+#test au niveau 5%
+
+q=qnorm(0.95,0,1) 
+
+final_test2<-function(n,p,s){
+  res=numeric()
+  for(j in 1:p){
+      if(s[j]>q){ #rejet
+        res[j]=1
+      }
+      else{
+        res[j]=0}
+    }
+  nb=sum(res)
+  return(nb)
+}
+
+```
+
+
+```{r}
+#Pour lambda=0
+
+Data_0 = StockSampling3(n,p,mu1,nu1,mu2,nu2,theta,0)
+Theta_0 = Theta(n,p,Data_0)
+Thetachap_0 = Thetachap(a,b,n,p,Theta_0)
+somme_0 = somme(a,b,n,p,Data_0,Thetachap_0)
+
+H1=final_test2(n,p,somme_0)
+x=H1/p
+cat(' Pour lambda = 0, on rejette H0 dans',(H1/p)*100,'% des cas')
+
+```
+
+
+```{r}
+#Pour lambda=0.2
+
+Data_0.2 = StockSampling3(n,p,mu1,nu1,mu2,nu2,theta,0.2)
+Theta_0.2 = Theta(n,p,Data_0.2)
+Thetachap_0.2 = Thetachap(a,b,n,p,Theta_0.2)
+somme_0.2 = somme(a,b,n,p,Data_0.2,Thetachap_0.2)
+
+H1=final_test2(n,p,somme_0.2)
+y=H1/p
+cat(' Pour lambda = 0.2, on rejette H0 dans',(H1/p)*100,'% des cas')
+
+```
+
+
+```{r}
+#Pour lambda=0.4
+
+Data_0.4 = StockSampling3(n,p,mu1,nu1,mu2,nu2,theta,0.4)
+Theta_0.4 = Theta(n,p,Data_0.4)
+Thetachap_0.4 = Thetachap(a,b,n,p,Theta_0.4)
+somme_0.4 = somme(a,b,n,p,Data_0.4,Thetachap_0.4)
+
+H1=final_test2(n,p,somme_0.4)
+z=H1/p
+cat(' Pour lambda = 0.4, on rejette H0 dans',(H1/p)*100,'% des cas')
+
+```
+
+
+```{r}
+#Pour lambda=0.5
+
+Data_0.5 = StockSampling3(n,p,mu1,nu1,mu2,nu2,theta,0.5)
+Theta_0.5 = Theta(n,p,Data_0.5)
+Thetachap_0.5 = Thetachap(a,b,n,p,Theta_0.5)
+somme_0.5 = somme(a,b,n,p,Data_0.5,Thetachap_0.5)
+
+H1=final_test2(n,p,somme_0.5)
+w=H1/p
+cat(' Pour lambda = 0.5, on rejette H0 dans',(H1/p)*100,'% des cas')
+
+```
+
+
+```{r}
+#Pour lambda=1
+
+Data_1 = StockSampling3(n,p,mu1,nu1,mu2,nu2,theta,1)
+Theta_1 = Theta(n,p,Data_1)
+Thetachap_1 = Thetachap(a,b,n,p,Theta_1)
+somme_1 = somme(a,b,n,p,Data_1,Thetachap_1)
+
+H1=final_test2(n,p,somme_1)
+v=H1/p
+cat(' Pour lambda = 1, on rejette H0 dans',(H1/p)*100,'% des cas')
+
+```
+
+
+
+```{r}
+#Puissance du test en fontion des valeurs de lambda
+
+abs <- c(0,0.2,0.4,0.5,1)
+ord <- c(x,y,z,w,v)
+
+plot(abs,ord ,type='l', main='Puissance du test', col='magenta')
+
+```
+
+
+
+
+```{r}
+#Tracé des statistiques de tests pour certaines valeurs de lambda
+library(ggplot2)
+
+```
+
+```{r}
+#Pour lambda=0
+
+d=as.data.frame(1/sqrt(n*Bn)*somme_0)
+ggplot(d, aes(x=1/sqrt(n*Bn)*somme_0)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") 
+
+```
+
+```{r}
+#Pour lambda=0.5
+
+e=as.data.frame(1/sqrt(n*Bn)*somme_0.5)
+ggplot(e, aes(x=1/sqrt(n*Bn)*somme_0.5)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") 
+
+```
+
+```{r}
+#Pour lambda=1
+
+f=as.data.frame(1/sqrt(n*Bn)*somme_1)
+ggplot(f, aes(x=1/sqrt(n*Bn)*somme_1)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666")
+
+```
+
+
+
+
+
+
