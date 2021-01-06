@@ -1,0 +1,195 @@
+---
+title: "Partie 2.2"
+author: "Ilan, Yohan, Avigail"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+#Veuillez charger les données réelles & modifier les adresses dans la dernière partie de ce code avant de l'exécuter
+```
+
+*Chapitre 2. Simulation et mise en application sur données réelles*
+**2.2 Tests sur données réelles**
+
+
+```{r a tester15}
+# estimation du theta
+Theta<-function(n,p,data){ 
+  Z = data
+  num = apply(as.data.frame( Z[3:n,]*Z[1:(n-2),] ) ,2,sum)
+  den = apply(as.data.frame( Z[2:(n-1),]*Z[1:(n-2),] ) ,2,sum)
+  THETA=num/den
+
+  return(THETA)
+}
+# estimation du theta pour les vraies données avec les Ztilde (même notation que le poly)
+Thetabis<-function(n,p,data,data2){
+  Z = data
+  ztilde = data2
+  num = apply(as.data.frame( ztilde[3:n,]*Z[1:(n-2),] ) ,2,sum)
+  den = apply(as.data.frame( Z[2:(n-1),]*Z[1:(n-2),] ) ,2,sum)
+  THETA=num/den
+
+  return(THETA)
+}
+
+
+```
+
+
+
+```{r}
+Zetoiles <-function(Zt){ #ici Z est un vecteur Z - w ( omega ) 
+  
+  w = mean( Zt$Close )
+  return(Zt['Close']-w)
+}
+
+```
+
+```{r}
+AnalyseVolatilite<-function(path,titre,k,Nbiteration){
+DATAinit <- read.csv(file=path) # récupération des vraies données
+DATA = DATAinit['Close'] # on s'intéresse Uniquement à ce prix là 
+Zt = DATA
+test.null = (Zt!='null') ##enlève les valeurs nulles
+Stock= Zt[ test.null, ]
+Zt = as.data.frame(Stock)
+names(Zt)[1] = "Close"
+Zt$Close = as.numeric(Zt$Close)
+
+res=numeric()
+Taille = dim(Zt)[1]
+Temps = c(1:Taille)
+
+
+res = Zt[2:Taille,1]/Zt[1:(Taille-1),]
+res[res==0]= res[2] #pour éviter les problèmes d'infini
+logrenta = log(res)
+
+logrenta[logrenta==0]= logrenta[2]#pour éviter les problèmes d'infini
+
+loglogrenta = log(logrenta^2)
+
+Zt=as.data.frame(loglogrenta )
+names(Zt)[1]="Close"
+#############################################################
+Zetoile = Zetoiles(Zt) # calcul de Zetoile
+
+n = dim(Zetoile)[1] # la taille de chaque vecteur 
+Nbiteration #nombre d'itérations pour avoir le theta limite
+w = mean(Zt$Close)
+
+Theta1n = Theta(n,1,Zetoile) # calcul de Theta 1-n ( voir notation poly )
+
+Gamma1n = (1/n)*sum(Zt[2:n,]-Theta1n*Zt[1:(n-1),]) #Calcul de Gamma 1-n
+
+##################################################################@
+
+gammain = numeric(Nbiteration)
+thetain = numeric(Nbiteration)
+ztildein = matrix(0, n, Nbiteration)
+
+
+gammain[1] = Gamma1n
+thetain[1] = Theta1n
+#i=2
+
+#formule itérative pour calculer les ztilde , theta , gamma 
+for(i in 2:Nbiteration){
+  ztildein[,i] =  ( Zt - gammain[i-1] )$Close
+  thetain[i] = Thetabis(n,1,Zt,as.data.frame(ztildein[,i]))
+  gammain[i] = w*(1-thetain[i])
+}
+
+###################
+Mn = 1/(n-1) * sum( (ztildein[2:n,Nbiteration] - thetain[Nbiteration] * Zt[1:(n-1),])^2 )
+Bn = 1/(n-1) * sum( (ztildein[2:n,Nbiteration] - thetain[Nbiteration] * Zt[1:(n-1),])^4 )
+
+###################
+
+Tn = numeric(k)
+#i=1
+
+# nous devons séparer en K groupe sinon la stat de test serait égale a 0 
+#sinon c'est le même calcul que précédement pour la stat de test
+for(i in 1:k){ 
+  
+Tn[i] = sqrt(k/(n*Bn)) * sum ( ( ztildein[(trunc( (i-1)*n/k)+2) : trunc(i*n/k),Nbiteration ] - thetain[Nbiteration] * Zt[ (trunc((i-1)*n/k)+1):(trunc(i*n/k)-1),] )^2 - Mn )
+
+}
+
+L=length(Tn[Tn>qnorm(0.95)]) # le nombre de fois on on rejette de test
+cat('Pour ',titre, '\n On accepte HO',k-L,'fois sur',k,'soit dans',(1-(L/k))*100,'% des cas')
+cat('\nOn rejette H0',L,'fois sur',k,'soit dans',(L/k)*100,'% des cas')
+cat('\n Voici le theta global esitimé',Theta1n )
+
+indice = c(1:k)
+Tn[Tn>qnorm(p=0.95)]
+
+
+NonLin = indice[Tn>qnorm(p=0.95)]  # nonlin est : les indice des Ti ou on accepte pas la lineaire
+VecteurCol = rep(1,n)
+indDate = rep(1,L)
+j=1
+for ( i in NonLin){
+  VecteurCol[ (trunc( (i-1)*n/k)+2) : (trunc(i*n/k)) ] = 2
+  indDate[j] = (trunc( (i-1)*n/k)+2)
+  j=j+1
+}
+#dans indDate on a l'indice de la 1ère date ou l'on refuse la linearité
+
+Date = DATAinit$Date
+cat("\n On rejette l'hypothèse de linearité aux dates suivantes")
+cat("\n",as.character(Date[indDate]),"pour une période de ",n/k, " jours a partir de la date affichée")
+
+
+
+########################
+
+
+x <- Temps[1:n]
+y <- DATAinit$Close #Données initiales
+y = y[1:n]
+z <- VecteurCol
+y2<-Zt[,1] 
+
+
+
+dat <- data.frame(x,y) # 
+dat2<- data.frame(x,Zt) # rajouter z
+
+require(ggplot2)
+library("gridExtra")
+#affichage du prix de l'indice boursier
+DonneeBrut<-ggplot(dat, aes(x, y)) + geom_line(aes(colour = z))  + labs(title = paste(titre," avec k=" , as.character(k)) )
+#affichage du log-log-rendement
+Loglogrendement<-ggplot(dat, aes(x, y2)) + geom_line(aes(colour = z))
+
+grid.arrange(DonneeBrut, Loglogrendement, ncol = 1 , nrow = 2)
+
+}
+```
+
+```{r}
+# A modifier avec l'adresse de l'ordinateur  x1 x2 x3 x4 x5 x6
+
+x1 = ("/Users/^DJI.csv")
+x2 = ("/Users/^IXIC.csv")
+x3 = ("/Users/^GSPC.csv")
+x4 = ("/Users/FB.csv")
+x5 = ("/Users/AMZN.csv")
+x6 = ("/Users/DB.csv") 
+
+Titre = c("DowJones","IXIC","GSPC","FB","AMZN","DEM/USD")
+link = c(x1,x2,x3,x4,x5,x6)
+
+for (i in 1:length(Titre) ){
+  for(k in c(2,10,30,50,80,100)) #ce sont les differentes valeurs de k pour lesquelles nous voulons faire les tests
+  AnalyseVolatilite(link[i],Titre[i],k,1000)
+}
+
+```
+
